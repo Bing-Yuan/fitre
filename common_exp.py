@@ -116,10 +116,10 @@ def get_net(args: argparse.Namespace) -> nn.Module:
     }[args.benchmark]
 
     model_list = {
-        'QAlexNetS': lambda: QAlexNetS(),
-        'QAlexNetSb': lambda: QAlexNetSb(),
-        'VGG16': lambda: VGG('VGG16'),
-        'VGG16b': lambda: VGGb('VGG16'),
+        'QAlexNetS': lambda: QAlexNetS(num_classes=num_classes),
+        'QAlexNetSb': lambda: QAlexNetSb(num_classes=num_classes),
+        'VGG16': lambda: VGG('VGG16', num_classes=num_classes),
+        'VGG16b': lambda: VGGb('VGG16', num_classes=num_classes),
         'ResNet18': lambda: rsn2.resnet(depth=20, num_classes=num_classes),
         'ResNet18b': lambda: rsn1.resnet(depth=20, num_classes=num_classes),
     }
@@ -233,12 +233,13 @@ def eval_test(model, test_loader, loss_f, device):
     test_loss = 0.
     correct = 0
     total = len(test_loader.dataset)
-    for data, target in test_loader:
-        data, target = data.to(device), target.to(device)
-        output = model(data)
-        pred = output.argmax(dim=1)
-        test_loss += loss_f(output, target).item() * len(data)  # sum up batch loss
-        correct += (pred == target).sum().item()
+    with torch.no_grad():
+        for data, target in test_loader:
+            data, target = data.to(device), target.to(device)
+            output = model(data)
+            pred = output.argmax(dim=1)
+            test_loss += loss_f(output, target).item() * len(data)  # sum up batch loss
+            correct += (pred == target).sum().item()
 
     test_loss /= total
     acc = 1.0 * correct / total
