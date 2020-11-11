@@ -29,7 +29,8 @@ class ExpArgParser(argparse.ArgumentParser):
         self.add_argument('--opt', type=str, choices=['sgd', 'kfac'],
                           help='the optimizer to use')
 
-        self.add_argument('--model', type=str, default='ResNet18',
+        self.add_argument('--model', type=str, default='QAlexNetS',
+                          choices=['QAlexNetS', 'QAlexNetSb', 'VGG16', 'VGG16b', 'ResNet18', 'ResNet18b'],
                           help='neural network model')
         self.add_argument('--init', type=str, default='def', choices=['def', 'km', 'xavier', '0', '1'],
                           help='init network model')
@@ -118,8 +119,8 @@ def get_net(args: argparse.Namespace) -> nn.Module:
     model_list = {
         'QAlexNetS': lambda: QAlexNetS(num_classes=num_classes),
         'QAlexNetSb': lambda: QAlexNetSb(num_classes=num_classes),
-        'VGG16': lambda: VGG('VGG16', num_classes=num_classes),
-        'VGG16b': lambda: VGGb('VGG16', num_classes=num_classes),
+        'VGG16': lambda: VGG('VGG16', num_class=num_classes),
+        'VGG16b': lambda: VGGb('VGG16', num_class=num_classes),
         'ResNet18': lambda: rsn2.resnet(depth=20, num_classes=num_classes),
         'ResNet18b': lambda: rsn1.resnet(depth=20, num_classes=num_classes),
     }
@@ -205,27 +206,6 @@ def get_data_loader(args: argparse.Namespace, train: bool, for_training: bool) -
             return DataLoader(ds, batch_size=args.batch_size, shuffle=False, **kwargs)
 
     raise NotImplementedError(f'Benchmark {args.benchmark} unsupported yet.')
-
-
-def fmt_args(args: argparse.Namespace) -> str:
-    title = args.stamp
-    s = [f'\n===== {title} configuration =====']
-    d = vars(args)
-    for k, v in d.items():
-        if k == 'stamp':
-            continue
-        s.append(f'  {k}: {v}')
-    s.append(f'===== end of {title} configuration =====\n')
-    return '\n'.join(s)
-
-
-def pp_time(duration: float) -> str:
-    """
-    :param duration: in seconds
-    """
-    m = floor(duration / 60)
-    s = duration - m * 60
-    return '%dm %ds (%.3f seconds)' % (m, s, duration)
 
 
 def eval_test(model, test_loader, loss_f, device):

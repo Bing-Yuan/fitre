@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import math
+import argparse
 
 import torch
 
@@ -96,3 +97,23 @@ def hessian_clip(grads_fun, grads_data, params, delta, vs, weight=0.0):
         vs = [v * alpha for v in vs]
         m = vHv *0.5 *alpha*alpha - gv *alpha
         return vs, m.item()
+
+
+def fmt_args(args: argparse.Namespace) -> str:
+    s = [f'\n===== configuration =====']
+    d = vars(args)
+    for k, v in d.items():
+        if k == 'stamp':
+            continue
+        s.append(f'  {k}: {v}')
+    s.append(f'===== end of configuration =====\n')
+    return '\n'.join(s)
+
+
+def pp_time(duration: float) -> str:
+    """
+    :param duration: in seconds
+    """
+    m = math.floor(duration / 60)
+    s = duration - m * 60
+    return '%dm %ds (%.3f seconds)' % (m, s, duration)

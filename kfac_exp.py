@@ -2,6 +2,7 @@
 
 from tr_kfac_opt import KFACOptimizer
 from common_exp import *
+from utils import fmt_args, pp_time
 
 
 class KFACArgParser(ExpArgParser):

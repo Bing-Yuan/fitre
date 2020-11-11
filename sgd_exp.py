@@ -4,6 +4,7 @@ from torch import optim
 from torch.optim.lr_scheduler import MultiStepLR
 
 from common_exp import *
+from utils import fmt_args, pp_time
 
 
 class SGDArgParser(ExpArgParser):
