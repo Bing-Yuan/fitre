@@ -131,6 +131,7 @@ class KFACOptimizer(optim.Optimizer):
                  Tf=10,
                  max_delta=100,
                  min_delta=1e-6,
+                 split_bs=True,
                  ):
         defaults = dict()
 
@@ -141,7 +142,8 @@ class KFACOptimizer(optim.Optimizer):
                 else:
                     split_bias(child)
 
-        # split_bias(model)
+        if split_bs:
+            split_bias(model)
 
         super(KFACOptimizer, self).__init__(model.parameters(), defaults)
 
