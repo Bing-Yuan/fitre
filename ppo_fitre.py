@@ -250,10 +250,8 @@ class FitrePPO(PPO):
                     self.policy.optimizer.zero_grad()
                     self.policy.optimizer.acc_stats = True
 
-                    # TODO not using ent_coef or vf_coef seems to work well, need this coef??
-                    # assert self.ent_coef > 0. and self.vf_coef > 0., '1st pass need ent/vf-coef to be > 0.'
-                    # loss = self.ent_coef * -th.mean(-log_prob) + self.vf_coef * value_loss
-                    loss = -th.mean(-log_prob) + value_loss
+                    # experiments show that his coef is better had
+                    loss = self.ent_coef * -th.mean(-log_prob) + self.vf_coef * value_loss
                     loss.backward(retain_graph=True)
 
                     policy = self.policy
