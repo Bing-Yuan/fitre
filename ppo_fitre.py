@@ -252,6 +252,7 @@ class FitrePPO(PPO):
 
                     # experiments show that his coef is better had
                     loss = self.ent_coef * -th.mean(-log_prob) + self.vf_coef * value_loss
+                    #loss = -th.mean(-log_prob) + value_loss
                     loss.backward(retain_graph=True)
 
                     policy = self.policy
@@ -297,6 +298,8 @@ class FitrePPO(PPO):
                     self.policy.optimizer.zero_grad()
                     self.policy.optimizer.acc_stats = False
                     loss.backward(create_graph=True)
+                    # Clip grad norm
+                    th.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
                     self.policy.optimizer.step(closure=_closure_fn)
                 else:
                     loss = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss
