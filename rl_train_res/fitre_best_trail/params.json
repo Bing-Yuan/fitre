@@ -1,0 +1,17 @@
+{
+  "batch_size": 256,
+  "clip_range": 0.17389655266130066,
+  "clip_range_vf": null,
+  "ent_coef": 0.05,
+  "gae_lambda": 0.9548200760044657,
+  "gamma": 0.9668635423551165,
+  "learning_rate": 0.0001,
+  "max_grad_norm": 0.5,
+  "n_epochs": 7,
+  "n_steps": 4096,
+  "sde_sample_freq": -1,
+  "seed": 1,
+  "target_kl": null,
+  "use_sde": false,
+  "vf_coef": 0.7300873431227772
+}
