@@ -137,3 +137,6 @@ dmypy.json
 # dataset directory
 data/
 models/
+
+# machine specific python env
+.envrc
