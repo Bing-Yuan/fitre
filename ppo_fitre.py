@@ -96,18 +96,6 @@ class FitreMlpPolicy(MlpPolicy):
         )
         return
 
-    def to(self, *args, **kwargs):
-        self.log_std = self.log_std.to(*args, **kwargs)
-        return super().to(*args, **kwargs)
-
-    def cuda(self, *args, **kwargs):
-        self.log_std = self.log_std.cuda(*args, **kwargs)
-        return super().cuda(*args, **kwargs)
-
-    def cpu(self, *args, **kwargs):
-        self.log_std = self.log_std.cuda(*args, **kwargs)
-        return super().cpu(*args, **kwargs)
-
     def _build(self, lr_schedule: Callable[[float], float]) -> None:
         """
         Create the networks and the optimizer.
@@ -132,7 +120,8 @@ class FitreMlpPolicy(MlpPolicy):
             self.action_net = th.nn.Linear(latent_dim_pi, self.action_dist.action_dim, bias=False)  # change bias to False
             # TODO: allow action dependent std
             # self.log_std = th.nn.Parameter(th.ones(self.action_dist.action_dim) * self.log_std_init, requires_grad=True)
-            self.log_std = th.ones(self.action_dist.action_dim) * self.log_std_init  # fix log_std, otherwise making FITRE harder
+            # fix log_std, otherwise making FITRE harder, but still needs it to move to GPU automatically
+            self.register_buffer('log_std', th.ones(self.action_dist.action_dim) * self.log_std_init)
         elif isinstance(self.action_dist, StateDependentNoiseDistribution):
             latent_sde_dim = latent_dim_pi if self.sde_net_arch is None else latent_sde_dim
             self.action_net, self.log_std = self.action_dist.proba_distribution_net(
