@@ -1,14 +1,26 @@
 import sys
-from itertools import product
+
+from tr_kfac_opt import KFACOptimizer
+# %load_ext autoreload
+# %autoreload 2
+
+import ray
+ray.init(num_cpus=50, num_gpus=1)
 
 import gym
-from stable_baselines3 import PPO
+import numpy as np
 
-from stable_baselines3.common.env_util import make_atari_env
+import stable_baselines3 as sb3
+from stable_baselines3 import PPO
+from stable_baselines3.common.env_util import make_vec_env, make_atari_env
 from stable_baselines3.common.vec_env import VecFrameStack
 
-from ppo_fitre import FitrePPO, FitreMlpPolicy
-from tr_kfac_opt import KFACOptimizer
+from ppo_fitre import FitrePPO
+
+import matplotlib.pyplot as plt
+
+from ray import tune
+from ray.tune import Analysis
 
 
 # Source copied from <https://github.com/openai/gym/blob/master/gym/envs/__init__.py>.
@@ -67,18 +79,120 @@ def test_print_all_envs():
 # exit(0)
 
 
-env = make_atari_env(atari_env_name('pong', 'image', 'v4', no_frame_skip=True), n_envs=4, seed=0)
-env = VecFrameStack(env, n_stack=4)
+def ppo_hyper(**kwargs):
+    return kwargs
+
+
+config = ppo_hyper(
+    learning_rate=tune.loguniform(1e-6, 0.01),
+    n_steps=tune.choice([256, 512, 1024, 2048, 4096]),
+    batch_size=tune.choice([32, 64, 128, 256, 512, 1024, 2048]),
+    n_epochs=tune.randint(4, 32),
+    gamma=tune.uniform(0.95, 1),
+    gae_lambda=tune.uniform(0.95, 0.999),
+    clip_range=tune.uniform(0.01, 0.5),
+    clip_range_vf=None,
+    ent_coef=0.05,
+    vf_coef=tune.uniform(0.2, 0.8),
+    max_grad_norm=0.5,
+    use_sde=False,
+    sde_sample_freq=-1,
+    target_kl=None,
+    seed=1
+)
+
+# config = ppo_hyper(  # randomly picked ones for testing
+#     learning_rate=1e-4,
+#     n_steps=256,
+#     batch_size=32,
+#     n_epochs=4,
+#     gamma=0.99,
+#     gae_lambda=0.99,
+#     clip_range=0.5,
+#     clip_range_vf=None,
+#     ent_coef=0.05,
+#     vf_coef=0.5,
+#     max_grad_norm=0.5,
+#     use_sde=False,
+#     sde_sample_freq=-1,
+#     target_kl=None,
+#     seed=1,
+#
+#     # policy_kwargs = dict(net_arch=[64, {'pi': [64], 'vf': [64]}])
+# )
+
+
+class ReportCallback(sb3.common.callbacks.BaseCallback):
+    def __init__(self, verbose=0):
+        super(ReportCallback, self).__init__(verbose)
+
+    def _on_rollout_end(self) -> None:
+        ep_rewards = [ep_info["r"] for ep_info in self.model.ep_info_buffer]
+        ep_rew_mean = np.mean(ep_rewards)
+        tune.report(ep_rew=ep_rew_mean)
+        return
+
+    def _on_step(self) -> bool:
+        return True
+
+
+def get_env():
+    env = make_atari_env(atari_env_name('pong', 'image', 'v4', no_frame_skip=True), n_envs=4, seed=0)
+    env = VecFrameStack(env, n_stack=4)
+    return env
+
+
+def train_fitre(config):
+    print("RUNNING FITRE")
+    env = get_env()
+    callback = ReportCallback()
+    # model = FitrePPO(FitreMlpPolicy, env, verbose=1)
+    model = FitrePPO('CnnPolicy', env, verbose=1, **config)
+    model.policy.optimizer = KFACOptimizer(model.policy)
+    model.learn(total_timesteps=1000000, callback=callback)
+    model.save("fitre_pong")
+    return
+
+
+def train_ppo(config):
+    print("RUNNING PPO")
+    env = get_env()
+    callback = ReportCallback()
+    # model = PPO('MlpPolicy', env, verbose=1)
+    model = PPO('CnnPolicy', env, verbose=1, **config)
+    model.learn(total_timesteps=1000000, callback=callback)
+    model.save("ppo_pong")
+    return
+
 
 args = sys.argv
 if len(args) <= 1 or args[1] == 'fitre':
-    print("RUNNING FITRE")
-    # model = FitrePPO(FitreMlpPolicy, env, verbose=1)
-    model = FitrePPO('CnnPolicy', env, verbose=1)
-    model.policy.optimizer = KFACOptimizer(model.policy)
-    model.learn(total_timesteps=1000000)
+    run_fitre = True
+    train = train_fitre
 else:
-    print("RUNNING PPO")
-    # model = PPO('MlpPolicy', env, verbose=1)
-    model = PPO('CnnPolicy', env, verbose=1)
-    model.learn(total_timesteps=1000000)
+    run_fitre = False
+    train = train_ppo
+
+
+analysis = tune.run(train, config=config, num_samples=50, verbose=1, metric="ep_rew", mode="max",
+                    raise_on_failed_trial=False)
+
+# analysis = tune.ExperimentAnalysis("~/ray_results/F16_train_2020-12-14_00-36-42/experiment_state-2020-12-14_00-36-42.json")
+# analysis = tune.Analysis("~/ray_results/F16_train_2020-12-14_00-36-42")
+print(f'loaded analysis: {analysis}')
+
+plt.figure()
+
+ax = None
+dfs = analysis.trial_dataframes
+for d in dfs.values():
+    ax = d.plot(kind='line', x="training_iteration", y="ep_rew", ax=ax, legend=False)
+
+y_axis = plt.axes().yaxis
+y_axis.set_label_text('ep_rew')
+# plt.show()
+title = 'fitre_pong_out.png' if run_fitre else 'ppo_pong_out.png'
+plt.savefig(title)
+
+# analysis.get_best_config(metric="ep_rew", mode="max")
+# print(analysis)
