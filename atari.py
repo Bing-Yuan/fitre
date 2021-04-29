@@ -1,4 +1,6 @@
 import sys
+from itertools import product
+from typing import Dict
 
 from tr_kfac_opt import KFACOptimizer
 # %load_ext autoreload
@@ -79,29 +81,54 @@ def test_print_all_envs():
 # exit(0)
 
 
-def ppo_hyper(**kwargs):
-    return kwargs
+def common_hypers() -> Dict:
+    return {
+        'n_steps': tune.choice([256, 512, 1024, 2048, 4096]),
+        'batch_size': tune.choice([32, 64, 128, 256, 512, 1024, 2048]),
+        'n_epochs': tune.randint(4, 32),
+        'gamma': tune.uniform(0.95, 1),
+        'gae_lambda': tune.uniform(0.95, 0.999),
+        'clip_range': tune.uniform(0.01, 0.5),
+        'clip_range_vf': None,
+        'ent_coef': 0.05,
+        'vf_coef': tune.uniform(0.2, 0.8),
+        'max_grad_norm': 0.5,
+        'use_sde': False,
+        'sde_sample_freq': -1,
+        'target_kl': None,
+        'seed': 1,
+    }
 
 
-config = ppo_hyper(
-    learning_rate=tune.loguniform(1e-6, 0.01),
-    n_steps=tune.choice([256, 512, 1024, 2048, 4096]),
-    batch_size=tune.choice([32, 64, 128, 256, 512, 1024, 2048]),
-    n_epochs=tune.randint(4, 32),
-    gamma=tune.uniform(0.95, 1),
-    gae_lambda=tune.uniform(0.95, 0.999),
-    clip_range=tune.uniform(0.01, 0.5),
-    clip_range_vf=None,
-    ent_coef=0.05,
-    vf_coef=tune.uniform(0.2, 0.8),
-    max_grad_norm=0.5,
-    use_sde=False,
-    sde_sample_freq=-1,
-    target_kl=None,
-    seed=1
-)
+def ppo_hypers():
+    params = common_hypers()
+    params.update({
+        'learning_rate': tune.loguniform(1e-6, 0.01),
+    })
+    return params
 
-# config = ppo_hyper(  # randomly picked ones for testing
+
+def fitre_hypers():
+    params = common_hypers()
+    params['fitre_params'] = {
+        'scheme': 'tr',
+        'momentum': 0,  # TODO
+        'check_grad': 0,
+        'stat_decay': tune.uniform(0.95, 1),
+        'kl_clip': tune.loguniform(1e-4, 1e-1),
+        'damping': tune.loguniform(1e-4, 1e-1),
+        'weight_decay': 0,  # TODO
+        'fast_cnn': tune.choice([True, False]),
+        'Ts': 1,  # TODO
+        'Tf': 10,  # TODO
+        'max_delta': 100,
+        'min_delta': 1e-6,
+        'split_bs': True
+    }
+    return params
+
+
+# config = ppo_hyper(  # randomly picked ones for testing, otherwise ray.tune values won't concretize
 #     learning_rate=1e-4,
 #     n_steps=256,
 #     batch_size=32,
@@ -146,9 +173,13 @@ def train_fitre(config):
     print("RUNNING FITRE")
     env = get_env()
     callback = ReportCallback()
+
+    fitre_params = config['fitre_params']
+    del config['fitre_params']
+
     # model = FitrePPO(FitreMlpPolicy, env, verbose=1)
     model = FitrePPO('CnnPolicy', env, verbose=1, **config)
-    model.policy.optimizer = KFACOptimizer(model.policy)
+    model.policy.optimizer = KFACOptimizer(model.policy, **fitre_params)
     model.learn(total_timesteps=1000000, callback=callback)
     model.save("fitre_pong")
     return
@@ -169,11 +200,14 @@ args = sys.argv
 if len(args) <= 1 or args[1] == 'fitre':
     run_fitre = True
     train = train_fitre
+    config = fitre_hypers()
 else:
     run_fitre = False
     train = train_ppo
+    config = ppo_hypers()
 
-
+# train(config)
+# exit(0)
 analysis = tune.run(train, config=config, num_samples=50, verbose=1, metric="ep_rew", mode="max",
                     raise_on_failed_trial=False)
 
