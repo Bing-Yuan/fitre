@@ -7,7 +7,7 @@ from tr_kfac_opt import KFACOptimizer
 # %autoreload 2
 
 import ray
-ray.init(num_cpus=50, num_gpus=1)
+ray.init(num_cpus=12, num_gpus=1)
 
 import gym
 import numpy as np
@@ -17,7 +17,7 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env, make_atari_env
 from stable_baselines3.common.vec_env import VecFrameStack
 
-from ppo_fitre import FitrePPO
+from ppo_fitre import FitrePPO, FitreMlpPolicy, FitreCnnPolicy
 
 import matplotlib.pyplot as plt
 
@@ -112,41 +112,20 @@ def fitre_hypers():
     params = common_hypers()
     params['fitre_params'] = {
         'scheme': 'tr',
-        'momentum': 0,  # TODO
+        'momentum': tune.uniform(0.8, 1),
         'check_grad': 0,
-        'stat_decay': tune.uniform(0.95, 1),
-        'kl_clip': tune.loguniform(1e-4, 1e-1),
-        'damping': tune.loguniform(1e-4, 1e-1),
-        'weight_decay': 0,  # TODO
-        'fast_cnn': tune.choice([True, False]),
-        'Ts': 1,  # TODO
-        'Tf': 10,  # TODO
-        'max_delta': 100,
+        'stat_decay': tune.uniform(0.9, 1),
+        'kl_clip': 0.001,
+        'damping': tune.loguniform(1e-6, 1e0),
+        'weight_decay': 0,
+        'fast_cnn': False,
+        'Ts': 1,
+        'Tf': tune.choice([1, 2, 5, 10]),
+        'max_delta': 10,
         'min_delta': 1e-6,
-        'split_bs': True
+        'split_bs': False
     }
     return params
-
-
-# config = ppo_hyper(  # randomly picked ones for testing, otherwise ray.tune values won't concretize
-#     learning_rate=1e-4,
-#     n_steps=256,
-#     batch_size=32,
-#     n_epochs=4,
-#     gamma=0.99,
-#     gae_lambda=0.99,
-#     clip_range=0.5,
-#     clip_range_vf=None,
-#     ent_coef=0.05,
-#     vf_coef=0.5,
-#     max_grad_norm=0.5,
-#     use_sde=False,
-#     sde_sample_freq=-1,
-#     target_kl=None,
-#     seed=1,
-#
-#     # policy_kwargs = dict(net_arch=[64, {'pi': [64], 'vf': [64]}])
-# )
 
 
 class ReportCallback(sb3.common.callbacks.BaseCallback):
@@ -178,7 +157,7 @@ def train_fitre(config):
     del config['fitre_params']
 
     # model = FitrePPO(FitreMlpPolicy, env, verbose=1)
-    model = FitrePPO('CnnPolicy', env, verbose=1, **config)
+    model = FitrePPO(FitreCnnPolicy, env, verbose=1, **config)
     model.policy.optimizer = KFACOptimizer(model.policy, **fitre_params)
     model.learn(total_timesteps=1000000, callback=callback)
     model.save("fitre_pong")
@@ -196,6 +175,47 @@ def train_ppo(config):
     return
 
 
+### Uncomment below to quickly test-run without tuning.
+# train = train_fitre
+# config = dict(  # randomly picked ones for testing, otherwise ray.tune values won't concretize
+#     learning_rate=1e-4,
+#     n_steps=256,
+#     batch_size=32,
+#     n_epochs=4,
+#     gamma=0.99,
+#     gae_lambda=0.99,
+#     clip_range=0.5,
+#     clip_range_vf=None,
+#     ent_coef=0.05,
+#     vf_coef=0.5,
+#     max_grad_norm=0.5,
+#     use_sde=False,
+#     sde_sample_freq=-1,
+#     target_kl=None,
+#     seed=1,
+#     # policy_kwargs = dict(net_arch=[64, {'pi': [64], 'vf': [64]}])
+#
+#     fitre_params = {
+#         'scheme': 'tr',
+#         'momentum': 0.9,
+#         'check_grad': 0,
+#         'stat_decay': 0.95,
+#         'kl_clip': 0.001,
+#         'damping': 1e-3,
+#         'weight_decay': 0,
+#         'fast_cnn': False,
+#         'Ts': 1,
+#         'Tf': 10,
+#         'max_delta': 10,
+#         'min_delta': 1e-6,
+#         'split_bs': False
+#     }
+# )
+#
+# train(config)
+# exit(0)
+
+
 args = sys.argv
 if len(args) <= 1 or args[1] == 'fitre':
     run_fitre = True
@@ -206,9 +226,8 @@ else:
     train = train_ppo
     config = ppo_hypers()
 
-# train(config)
-# exit(0)
 analysis = tune.run(train, config=config, num_samples=50, verbose=1, metric="ep_rew", mode="max",
+                    # resources_per_trial={'gpu': 1},
                     raise_on_failed_trial=False)
 
 # analysis = tune.ExperimentAnalysis("~/ray_results/F16_train_2020-12-14_00-36-42/experiment_state-2020-12-14_00-36-42.json")

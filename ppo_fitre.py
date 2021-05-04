@@ -4,15 +4,18 @@ from functools import partial
 from itertools import zip_longest
 from typing import List, Union, Dict, Type, Callable
 
+import gym
 import numpy as np
 import torch as th
+from stable_baselines3.common.preprocessing import is_image_space
+from torch import nn
 from torch.nn import functional as F
 from gym import spaces
 
 from stable_baselines3 import PPO
-from stable_baselines3.ppo import MlpPolicy
+from stable_baselines3.ppo import MlpPolicy, CnnPolicy
 from stable_baselines3.common import logger
-from stable_baselines3.common.torch_layers import MlpExtractor
+from stable_baselines3.common.torch_layers import MlpExtractor, NatureCNN
 from stable_baselines3.common.distributions import DiagGaussianDistribution, StateDependentNoiseDistribution, \
     CategoricalDistribution, MultiCategoricalDistribution, BernoulliDistribution
 from stable_baselines3.common.policies import create_sde_features_extractor
@@ -128,7 +131,8 @@ class FitreMlpPolicy(MlpPolicy):
                 latent_dim=latent_dim_pi, latent_sde_dim=latent_sde_dim, log_std_init=self.log_std_init
             )
         elif isinstance(self.action_dist, CategoricalDistribution):
-            self.action_net = self.action_dist.proba_distribution_net(latent_dim=latent_dim_pi)
+            self.action_net = nn.Linear(in_features=latent_dim_pi, out_features=self.action_dist.action_dim, bias=False)
+            # self.action_net = self.action_dist.proba_distribution_net(latent_dim=latent_dim_pi)
         elif isinstance(self.action_dist, MultiCategoricalDistribution):
             self.action_net = self.action_dist.proba_distribution_net(latent_dim=latent_dim_pi)
         elif isinstance(self.action_dist, BernoulliDistribution):
@@ -157,6 +161,57 @@ class FitreMlpPolicy(MlpPolicy):
         self.optimizer = self.optimizer_class(self.parameters(), lr=lr_schedule(1), **self.optimizer_kwargs)
         return
     pass
+
+
+class FitreNatureCNN(NatureCNN):
+    """
+    CNN from DQN nature paper:
+        Mnih, Volodymyr, et al.
+        "Human-level control through deep reinforcement learning."
+        Nature 518.7540 (2015): 529-533.
+
+    :param observation_space:
+    :param features_dim: Number of features extracted.
+        This corresponds to the number of unit for the last layer.
+    """
+
+    def __init__(self, observation_space: gym.spaces.Box, features_dim: int = 512):
+        super(FitreNatureCNN, self).__init__(observation_space, features_dim)
+        # We assume CxHxW images (channels first)
+        # Re-ordering will be done by pre-preprocessing or wrapper
+        assert is_image_space(observation_space), (
+            "You should use NatureCNN "
+            f"only with images not with {observation_space}\n"
+            "(you are probably using `CnnPolicy` instead of `MlpPolicy`)\n"
+            "If you are using a custom environment,\n"
+            "please check it using our env checker:\n"
+            "https://stable-baselines3.readthedocs.io/en/master/common/env_checker.html"
+        )
+        n_input_channels = observation_space.shape[0]
+        self.cnn = nn.Sequential(
+            nn.Conv2d(n_input_channels, 32, kernel_size=8, stride=4, padding=0, bias=False),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=0, bias=False),
+            nn.ReLU(),
+            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=0, bias=False),
+            nn.ReLU(),
+            nn.Flatten(),
+        )
+
+        # Compute shape by doing one forward pass
+        with th.no_grad():
+            n_flatten = self.cnn(th.as_tensor(observation_space.sample()[None]).float()).shape[1]
+
+        self.linear = nn.Sequential(nn.Linear(n_flatten, features_dim, bias=False), nn.ReLU())
+        return
+
+
+class FitreCnnPolicy(FitreMlpPolicy):
+    def __init__(self, *args, **kwargs):
+        super(FitreCnnPolicy, self).__init__(
+            features_extractor_class=FitreNatureCNN,
+            *args, **kwargs
+        )
 
 
 class FitrePPO(PPO):

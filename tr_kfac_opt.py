@@ -299,6 +299,8 @@ class KFACOptimizer(optim.Optimizer):
         #print( 'norm of vs (x_kfac): ', math.sqrt( group_product( vs, vs ) ) )
 
         assert(group_product(vs, grads_data) >= 0)
+        # print(f'kl_clip: {self.kl_clip}')
+        # print(f'vs: {vs}')
         vs, self.q_model_change = self.hessian_clip(grads_fun, grads_data, list(self.model.parameters()), self.kl_clip, vs, self.weight_decay)
         if self.check_grad != 0:
             gs, q_model_change_grad = self.hessian_clip(grads_fun, grads_data, list(self.model.parameters()), self.kl_clip, grads_data, self.weight_decay)
